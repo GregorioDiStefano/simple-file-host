@@ -12,6 +12,10 @@ class Config(object):
     DEBUG = True
     TESTING = False
     UPLOAD_FOLDER = "uploaded"
+    MAX_UPLOADS = 3
+    LIFETIME_MINUTES = 1
+    MAX_CONTENT_LENGTH = 200 * 1024 * 1024 #200mb
+
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -32,13 +36,14 @@ def create_resource(uid, filename):
     if upload_ips["since"] < datetime.now().date():
         upload_ips = { "since": datetime.now().date() }
 
-    if ip in upload_ips and upload_ips[ip] >= 3:
-        err = "IP has already uploaded a file 3 times"
+    if ip in upload_ips and upload_ips[ip] >= app.config["MAX_UPLOADS"]:
+        err = "IP has already uploaded a file % times" % (app.config["MAX_UPLOADS"])
         logging.info(err)
         raise Exception(err)
     else:
         upload_ips[ip] = upload_ips.get(ip, 0) + 1
-    valid_until = datetime.now() + timedelta(minutes=1)
+    valid_until = datetime.now() + timedelta(minutes=app.config["LIFETIME_MINUTES"])
+    print "Valid until: ", valid_until
     files[uid] =  { "filename" : filename, "valid_until" : valid_until, "recieved": False }
 
 @app.route('/', methods=['GET', 'POST'])
@@ -58,7 +63,7 @@ def index():
 
         logging.info("Create file mapping: %s => %s" % (uid, files[uid]))
 
-        return "\nDownload file: %s -- you can only download it once, and within the next hour.\n" % (app.config["DOMAIN"] + uid)
+        return "\nDownload file: %s -- you can only download it once, and within the next %s minutes.\n" % (app.config["DOMAIN"] + uid, app.config["LIFETIME_MINUTES"])
     else:
         return 'Use cURL to POST your file to this location..'
 
@@ -66,6 +71,8 @@ def index():
 def get_file(uid):
     if uid not in files:
         return "That file doesnt exist."
+    if datetime.now() > files[uid]["valid_until"]:
+        return "The file lifetime expired."
     if not files[uid]["recieved"]:
         files[uid]["recieved"] = True
         filename = files[uid]["filename"]
