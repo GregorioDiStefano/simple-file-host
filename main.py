@@ -30,14 +30,18 @@ def random_uid():
     return ''.join(uid)
 
 def create_resource(uid, filename):
-    ip = request.remote_addr
     global upload_ips
+
+    if request.headers.getlist("X-Forwarded-For"):
+       ip = request.headers.getlist("X-Forwarded-For")[0]
+    else:
+       ip = request.remote_addr
 
     if upload_ips["since"] < datetime.now().date():
         upload_ips = { "since": datetime.now().date() }
 
     if ip in upload_ips and upload_ips[ip] >= app.config["MAX_UPLOADS"]:
-        err = "IP has already uploaded a file % times" % (app.config["MAX_UPLOADS"])
+        err = "IP has already uploaded a file %s times" % (app.config["MAX_UPLOADS"])
         logging.info(err)
         raise Exception(err)
     else:
@@ -59,13 +63,17 @@ def index():
         try:
             create_resource(uid, filename)
         except Exception, e:
-            return str(e)
+            return str(e), 403
 
         logging.info("Create file mapping: %s => %s" % (uid, files[uid]))
 
         return "\nDownload file: %s -- you can only download it once, and within the next %s minutes.\n" % (app.config["DOMAIN"] + uid, app.config["LIFETIME_MINUTES"])
     else:
-        return 'Use cURL to POST your file to this location..'
+        return """
+        Use cURL to POST your file to this location..
+        <form action="/" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" id="file">
+        <input type="submit" value="Upload Image" name="submit"></form>"""
 
 @app.route('/<uid>/')
 def get_file(uid):
